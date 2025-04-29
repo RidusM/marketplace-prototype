@@ -1,0 +1,162 @@
+syntax = "proto3";
+
+option go_package = "pkg/api/rbacAuth";
+
+package rbacAuth;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/google/api/annotations.proto";
+
+service AuthService {
+  rpc SignUp(SignUpRequest) returns (TokensResponse) {
+    option (google.api.http) = {
+      post: "/auth/signup"
+      body: "*"
+    };
+  }
+
+  rpc Verify(VerifyRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/auth/verify"
+      body: "*"
+    };
+  }
+
+  rpc SignIn(SignInRequest) returns (TokensResponse) {
+    option (google.api.http) = {
+      post: "/auth/signin"
+      body: "*"
+    };
+  }
+
+  rpc RefreshSession(RefreshSessionRequest) returns (TokensResponse) {
+    option (google.api.http) = {
+      post: "/auth/refresh"
+      body: "*"
+    };
+  }
+
+  rpc LogOut(LogOutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/auth/logout"
+      body: "*"
+    };
+  }
+
+  rpc ChangePassword(ChangePasswordRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/auth/change-password"
+      body: "*"
+    };
+  }
+  
+  rpc ConfirmChangePassword(ConfirmChangePasswordRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/auth/confirm-change-password"
+      body: "*"
+    };
+  }
+
+  rpc GetUser(GetUserRequest) returns (UserResponse) {
+    option (google.api.http) = {
+      get: "/auth/user/{user_id}"
+    };
+  }
+
+  rpc UpdateUser(UpdateUserRequest) returns (UserResponse) {
+    option (google.api.http) = {
+      put: "/auth/user/update"
+      body: "*"
+    };
+  }
+
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/auth/user/delete/{user_id}"
+    };
+  }
+}
+
+message SignUpRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3;
+  string password_confirm = 4;
+}
+
+message VerifyRequest {
+  string user_id = 1;
+  bytes verify_token = 2;
+}
+
+message SignInRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message SetSessionRequest {
+  string user_id = 1;
+  string device_id = 2;
+  string user_role = 3;
+}
+
+message RefreshSessionRequest{
+  string user_id = 1;
+  string device_id = 2;
+  string user_role = 3;
+}
+
+message LogOutRequest {
+  string access_token = 1;
+  string refresh_token = 2;
+}
+
+message ChangePasswordRequest {
+  string email = 1;
+  string new_password = 2;
+  string new_password_confirm = 3;
+}
+
+message ConfirmChangePasswordRequest {
+  string user_id = 1;
+  bytes verify_token = 2;
+  string new_password = 3;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  string username = 2;
+  string email = 3;
+  string password = 4;
+  string role = 5;
+}
+
+message DeleteUserRequest {
+  string user_id = 1;
+}
+
+message SignUpResponse{
+  string user_id = 1;
+  TokensResponse tokens = 2;
+}
+
+message TokensResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+}
+
+message UserResponse {
+  string id = 1;
+  string username = 2;
+  string email = 3;
+  string password = 4;
+  string role = 5;
+  bool verified = 6;
+  google.protobuf.Timestamp createdAt = 7;
+  google.protobuf.Timestamp updatedAt = 8;
+}

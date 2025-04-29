@@ -1,0 +1,41 @@
+app:
+  name: MyApp
+  version: 1.0.0
+
+auth:
+  access_token_ttl: 15m
+  refresh_token_ttl: 720h
+  verify_ttl: 24h
+  user_cache_ttl: 1h
+  secret_key: prod-secret-key
+
+postgres:
+  connection: postgres
+  host: auth-postgres
+  port: 5432
+  name: auth
+  user: postgres
+  password: admin
+  pool_max: 20
+
+redis:
+  addr: redis:6379
+  password: 
+
+kafka:
+  brokers:
+    - kafka1:39092
+    - kafka2:39093
+    - kafka3:39094
+
+otlp:
+  endpoint: tempo:4317
+
+email:
+  host: smtp.mail.ru
+  port: 465
+  username: yegorsandalov2004@mail.ru
+  password: Cp97DiiCPuVywF8zqkMf
+  sender: yegorsandalov2004@mail.ru
+
+env: prod

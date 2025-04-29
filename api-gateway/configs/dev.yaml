@@ -1,0 +1,28 @@
+app:
+  name: "marketplace"
+  version: "1.0.0-dev"
+
+kafka:
+  brokers:
+    - "kafka-dev-broker1:9092"
+
+otlp:
+  endpoint: "http://otlp-dev.example.com"
+
+product_service:
+  host: "product-service-dev.example.com"
+  metrics_port: "8001"
+
+user_service:
+  host: "user-service-dev.example.com"
+  metrics_port: "8002"
+
+payment_service:
+  host: "payment-service-dev.example.com"
+  metrics_port: "8003"
+
+auth_service:
+  host: "auth-service-dev.example.com"
+  metrics_port: "8004"
+
+env: "dev"

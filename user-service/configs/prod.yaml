@@ -1,0 +1,32 @@
+grpcConfig:
+  port: "8080"
+
+postgresConfig:
+  user: "postgres"
+  password: "postgres"
+  host: "user-postgres"
+  port: "5432"
+  name: "user"
+  connection: "postgres"
+  maxPool: 5
+  timeout: 1s
+  connAttempts: 10
+
+otlp:
+  endpoint: tempo:4317
+
+kafka:
+  brokers:
+    - kafka1:39092
+    - kafka2:39093
+    - kafka3:39094
+
+env: "prod"
+  
+
+redisConfig:
+  password:
+  address: "user-redis:6379"
+  poolSize: 2
+  minIdleCons: 4
+  connTimeout: 1s

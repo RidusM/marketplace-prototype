@@ -1,0 +1,211 @@
+package grpcapp
+
+import (
+	"context"
+	"crypto/tls"
+	"flag"
+	"fmt"
+	"net"
+	"net/http"
+	"runtime/debug"
+	"time"
+	"userService/internal/config"
+	client "userService/pkg/api/client"
+	"userService/pkg/logger"
+	"userService/pkg/metric"
+	"userService/pkg/oteltrace"
+
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
+)
+
+var (
+	sleep = flag.Duration("sleep", time.Second*5, "duration between changes in health")
+
+	kaep = keepalive.EnforcementPolicy{
+		MinTime:             5 * time.Second,
+		PermitWithoutStream: false,
+	}
+
+	kasp = keepalive.ServerParameters{
+		MaxConnectionIdle:     15 * time.Second,
+		MaxConnectionAge:      30 * time.Second,
+		MaxConnectionAgeGrace: 5 * time.Second,
+		Time:                  5 * time.Second,
+		Timeout:               1 * time.Second,
+	}
+)
+
+type Server struct {
+	grpcServer        *grpc.Server
+	httpServer        *http.Server
+	grpcAddr          string
+	log               *logger.Logger
+	traceProvider     trace.TracerProvider
+	prometheusFactory metric.PrometheusFactory
+}
+
+func New(ctx context.Context, port, metricsPort string, otlpConfig config.OTLPConfig, log *logger.Logger, service Service) (*Server, error) {
+	const op = "transport.grpc.app.New"
+
+	logSpanTraceID := func(ctx context.Context) logging.Fields {
+		if span := trace.SpanContextFromContext(ctx); span.IsSampled() {
+			return logging.Fields{
+				"traceID", span.TraceID().String(),
+				"spanID", span.SpanID().String(),
+			}
+		}
+		return nil
+	}
+
+	spanTraceFromContext := func(ctx context.Context) prometheus.Labels {
+		if span := trace.SpanContextFromContext(ctx); span.IsSampled() {
+			return prometheus.Labels{
+				"traceID": span.TraceID().String(),
+				"spanID":  span.SpanID().String(),
+			}
+		}
+		return nil
+	}
+
+	exp, err := oteltrace.NewOTLPExporter(ctx, otlpConfig.OTLPEndpoint)
+	if err != nil {
+		log.Error("failed to create OTLP exporter", logger.Err(err))
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	tp, err := oteltrace.NewTraceProvider(exp, "auth-service")
+	if err != nil {
+		log.Error("failed to create trace provider", logger.Err(err))
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer func() { _ = exp.Shutdown(context.Background()) }()
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
+	srvMetrics := grpcprom.NewServerMetrics(
+		grpcprom.WithServerHandlingTimeHistogram(
+			grpcprom.WithHistogramBuckets([]float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120}),
+		),
+	)
+
+	panicsTotal := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "grpc_req_panics_recovered_total",
+		Help: "Total number of gRPC requests recovered from internal panic.",
+	})
+
+	grpcPanicRecoveryHandler := func(p any) (err error) {
+		panicsTotal.Inc()
+		log.Error("recovered from panic", "panic", p, "stack", debug.Stack())
+		return status.Errorf(codes.Internal, "%s", p)
+	}
+
+	cert, err := tls.LoadX509KeyPair("/app/x509/server-cert.pem", "/app/x509/server-key.pem")
+	if err != nil {
+		log.Error("failed to load key pair: %s", logger.Err(err))
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	grpcSrv := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(
+			srvMetrics.UnaryServerInterceptor(grpcprom.WithExemplarFromContext(spanTraceFromContext)),
+			logging.UnaryServerInterceptor(InterceptorLogger(log), logging.WithFieldsFromContext(logSpanTraceID)),
+			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandler(grpcPanicRecoveryHandler)),
+		),
+		grpc.KeepaliveEnforcementPolicy(kaep),
+		grpc.KeepaliveParams(kasp),
+		grpc.Creds(credentials.NewServerTLSFromCert(&cert)),
+	)
+
+	healthcheck := health.NewServer()
+	healthpb.RegisterHealthServer(grpcSrv, healthcheck)
+	client.RegisterUserServiceServer(grpcSrv, NewUserService(service))
+
+	go func() {
+		next := healthpb.HealthCheckResponse_SERVING
+		for {
+			healthcheck.SetServingStatus("auth-service", next)
+			if next == healthpb.HealthCheckResponse_SERVING {
+				next = healthpb.HealthCheckResponse_NOT_SERVING
+			} else {
+				next = healthpb.HealthCheckResponse_SERVING
+			}
+			time.Sleep(*sleep)
+		}
+	}()
+
+	httpSrv := &http.Server{Addr: metricsPort}
+
+	srvMetrics.InitializeMetrics(grpcSrv)
+
+	return &Server{
+		grpcServer:        grpcSrv,
+		httpServer:        httpSrv,
+		grpcAddr:          port,
+		log:               log,
+		traceProvider:     tp,
+		prometheusFactory: metric.NewPrometheusFactory(srvMetrics, panicsTotal),
+	}, nil
+}
+
+func (s *Server) Start(ctx context.Context) error {
+	const op = "transport.grpc.app.Start"
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		l, err := net.Listen("tcp", s.grpcAddr)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+
+		s.log.Info("starting gRPC server", "addr", l.Addr().String())
+
+		return s.grpcServer.Serve(l)
+	})
+
+	eg.Go(func() error {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", s.prometheusFactory.InitHandler())
+		s.httpServer.Handler = mux
+
+		s.log.Info("starting HTTP server", "addr", s.httpServer.Addr)
+
+		return s.httpServer.ListenAndServe()
+	})
+
+	eg.Go(func() error {
+		<-ctx.Done()
+		return s.Stop(ctx)
+	})
+
+	return eg.Wait()
+}
+
+func (s *Server) Stop(ctx context.Context) error {
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
+
+	if s.httpServer != nil {
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			return fmt.Errorf("http server shutdown: %w", err)
+		}
+	}
+	return nil
+}

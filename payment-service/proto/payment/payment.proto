@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+option go_package = "pkg/api/payment";
+
+package api;
+
+import "google/protobuf/timestamp.proto";
+import "proto/google/api/annotations.proto";
+
+service PaymentService {
+  rpc ProcessPayment(ProcessPaymentRequest) returns (ProcessPaymentResponse){
+    option (google.api.http) = {
+      get: "/products/{order_id}"
+    };
+  }
+}
+
+message Payment {
+  string payment_id = 1;
+  string order_id = 2;
+  int64 amount = 3;
+  string payment_method = 4;
+  string status = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ProcessPaymentRequest {
+  string order_id = 1;
+  int64 amount = 2;
+  string payment_method = 3;
+  string status = 4;
+}
+
+message ProcessPaymentResponse {
+  bool success = 1;
+}

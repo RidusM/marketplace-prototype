@@ -1,0 +1,529 @@
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    depends_on:
+      - auth-service
+      - users-service
+      - product-service
+      - payment-service
+      - order-service
+      - nginx
+    env_file:
+      - ./api-gateway/.env
+    networks:
+      - internal
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./auth-service/x509:/app/x509
+
+  # Nginx
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "443:443"
+    volumes:
+      - ./api-gateway/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./api-gateway/nginx/conf.d:/etc/nginx/conf.d
+      - ./api-gateway/nginx/grpc_params:/etc/nginx/grpc_params
+      - ./api-gateway/x509/auth/server-cert.pem:/etc/ssl/certs/marketplace-cert.pem
+      - ./api-gateway/x509/auth/server-key.pem:/etc/ssl/private/marketplace-key.pem
+    networks:
+      - internal
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    depends_on:
+      - auth-postgres
+      - auth-redis
+      - auth-migrate
+    networks:
+      - internal
+    ports:
+      - "8084:8080"
+      - "8085:8081"
+    volumes:
+      - ./auth-service/x509:/app/x509
+    env_file:
+      - ./auth-service/.env
+
+  auth-postgres:
+    image: postgres:latest
+    container_name: auth-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d auth -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "5434:5432"
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  auth-migrate:
+    image: migrate/migrate:latest
+    command: ["-database", "postgres://postgres:postgres@auth-postgres:5432/auth?sslmode=disable", "-path", "/migrations", "up"]
+    volumes:
+      - ./auth-service/migrations:/migrations
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  auth-redis:
+    image: redis:alpine
+    container_name: auth-redis
+    ports:
+      - "6380:6379"
+    networks:
+      - internal
+
+  # User Service
+  users-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: users-service
+    depends_on:
+      - user-postgres
+      - user-redis
+      - user-migrate
+    networks:
+      - internal
+    ports:
+      - "8098:8080"
+      - "8099:8081"
+    volumes:
+      - ./user-service/x509:/app/x509
+    env_file:
+      - ./user-service/.env
+
+  user-postgres:
+    image: postgres:latest
+    container_name: user-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: user
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d user -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "5435:5432"
+    volumes:
+      - user_postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  user-migrate:
+    image: migrate/migrate:latest
+    command: ["-database", "postgres://postgres:postgres@user-postgres:5432/user?sslmode=disable", "-path", "/migrations", "up"]
+    volumes:
+      - ./user-service/migrations:/migrations
+    depends_on:
+      user-postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  user-redis:
+    image: redis:alpine
+    container_name: user-redis
+    ports:
+      - "6381:6379"
+    networks:
+      - internal
+
+  # Product Service
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    container_name: product-service
+    depends_on:
+      - product-postgres
+      - product-redis
+    env_file: ./product-service/.env
+    networks:
+      - internal
+    ports:
+      - "8087:8080"
+      - "8088:8081"
+    volumes:
+      - ./product-service/x509:/app/x509
+
+  product-postgres:
+    image: postgres:latest
+    container_name: product-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: product
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d product -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "5436:5432"
+    volumes:
+      - product_postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  product-migrate:
+    image: migrate/migrate:latest
+    command: ["-database", "postgres://postgres:postgres@product-postgres:5432/product?sslmode=disable", "-path", "/migrations", "up"]
+    volumes:
+      - ./product-service/migrations:/migrations
+    depends_on:
+      product-postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  product-redis:
+    image: redis:alpine
+    container_name: product-redis
+    ports:
+      - "6382:6379"
+    networks:
+      - internal
+
+  # Payment Service
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: payment-service
+    depends_on:
+      - payment-postgres
+      - payment-redis
+    env_file: ./payment-service/.env
+    networks:
+      - internal
+    ports:
+      - "8090:8080"
+      - "8091:8081"
+    volumes:
+      - ./payment-service/x509:/app/x509
+
+  payment-postgres:
+    image: postgres:latest
+    container_name: payment-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payment
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d payment -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "5437:5432"
+    volumes:
+      - payment_postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  payment-migrate:
+    image: migrate/migrate:latest
+    command: ["-database", "postgres://postgres:postgres@payment-postgres:5432/payment?sslmode=disable", "-path", "/migrations", "up"]
+    volumes:
+      - ./payment-service/migrations:/migrations
+    depends_on:
+      payment-postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  payment-redis:
+    image: redis:alpine
+    container_name: payment-redis
+    ports:
+      - "6383:6379"
+    networks:
+      - internal
+  
+  # Order Service
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    depends_on:
+      - order-postgres
+      - order-redis
+    env_file: ./order-service/.env
+    networks:
+      - internal
+    ports:
+      - "8094:8080"
+      - "8095:8081"
+    volumes:
+      - ./order-service/x509:/app/x509
+
+  order-postgres:
+    image: postgres:latest
+    container_name: order-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: order
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d order -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "5440:5432"
+    volumes:
+      - order_postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  order-migrate:
+    image: migrate/migrate:latest
+    command: ["-database", "postgres://postgres:postgres@order-postgres:5432/order?sslmode=disable", "-path", "/migrations", "up"]
+    volumes:
+      - ./order-service/migrations:/migrations
+    depends_on:
+      order-postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  order-redis:
+    image: redis:alpine
+    container_name: order-redis
+    ports:
+      - "6390:6379"
+    networks:
+      - internal
+ 
+  kafka-gen:
+    image: confluentinc/cp-kafka:7.3.3
+    hostname: kafka-gen
+    container_name: kafka-gen
+    volumes:
+      - ./volumes/kafka/scripts/create_cluster_id.sh:/tmp/create_cluster_id.sh
+      - ./volumes/kafka/clusterID:/tmp/clusterID
+    command: "bash -c '/tmp/create_cluster_id.sh'"
+    networks:
+      - internal
+
+  kafka1:
+    depends_on:
+      - kafka-gen
+    image: confluentinc/cp-kafka:7.3.3
+    hostname: kafka1
+    ports:
+      - "39092:39092"
+    environment:
+      KAFKA_LISTENERS: BROKER://kafka1:19092,EXTERNAL://kafka1:39092,CONTROLLER://kafka1:9093
+      KAFKA_ADVERTISED_LISTENERS: BROKER://kafka1:19092,EXTERNAL://kafka1:39092
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_PROCESS_ROLES: "controller,broker"
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+    volumes:
+      - ./volumes/kafka/scripts/update_run.sh:/tmp/update_run.sh
+      - ./volumes/kafka/clusterID:/tmp/clusterID
+    command: "bash -c '/tmp/update_run.sh && /etc/confluent/docker/run'"
+    networks:
+      - internal
+
+  kafka2:
+    depends_on:
+      - kafka-gen
+    image: confluentinc/cp-kafka:7.3.3
+    hostname: kafka2
+    ports:
+      - "39093:39093"
+    environment:
+      KAFKA_LISTENERS: BROKER://kafka2:19093,EXTERNAL://kafka2:39093,CONTROLLER://kafka2:9093
+      KAFKA_ADVERTISED_LISTENERS: BROKER://kafka2:19093,EXTERNAL://kafka2:39093
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_PROCESS_ROLES: "controller,broker"
+      KAFKA_NODE_ID: 2
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_METADATA_LOG_SEGMENT_MS: 15000
+      KAFKA_METADATA_MAX_RETENTION_MS: 1200000
+      KAFKA_METADATA_LOG_MAX_RECORD_BYTES_BETWEEN_SNAPSHOTS: 2800
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+    volumes:
+      - ./volumes/kafka/scripts/update_run.sh:/tmp/update_run.sh
+      - ./volumes/kafka/clusterID:/tmp/clusterID
+    command: "bash -c '/tmp/update_run.sh && /etc/confluent/docker/run'"
+    networks:
+      - internal
+
+  kafka3:
+    depends_on:
+      - kafka-gen
+    image: confluentinc/cp-kafka:7.3.3
+    hostname: kafka3
+    ports:
+      - "39094:39094"
+    environment:
+      KAFKA_LISTENERS: BROKER://kafka3:19094,EXTERNAL://kafka3:39094,CONTROLLER://kafka3:9093
+      KAFKA_ADVERTISED_LISTENERS: BROKER://kafka3:19094,EXTERNAL://kafka3:39094
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_PROCESS_ROLES: "controller,broker"
+      KAFKA_NODE_ID: 3
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_METADATA_LOG_SEGMENT_MS: 15000
+      KAFKA_METADATA_MAX_RETENTION_MS: 1200000
+      KAFKA_METADATA_LOG_MAX_RECORD_BYTES_BETWEEN_SNAPSHOTS: 2800
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+    volumes:
+      - ./volumes/kafka/scripts/update_run.sh:/tmp/update_run.sh
+      - ./volumes/kafka/clusterID:/tmp/clusterID
+    command: "bash -c '/tmp/update_run.sh && /etc/confluent/docker/run'"
+    networks:
+      - internal
+
+  init-kafka-topics:
+    image: confluentinc/cp-kafka:7.3.3
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      # blocks until kafka is reachable
+      kafka-topics --bootstrap-server kafka1:39092 --list
+
+      echo -e 'Creating kafka topic: application.logs'
+      kafka-topics --bootstrap-server kafka1:39092 --create --if-not-exists --topic application.logs --replication-factor 2 --partitions 6
+
+      echo -e 'Successfully created the following topics:'
+      kafka-topics --bootstrap-server kafka1:39092 --list
+      "
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:9.3.2
+    ports:
+      - 3000:3000
+    volumes:
+      - ./volumes/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./volumes/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: true
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: true
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor traceQLStreaming metricsSummary"
+    networks:
+      - internal
+
+  loki:
+    image: grafana/loki:2.9.3
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./volumes/loki:/mnt/config/
+    command: -config.file=/mnt/config/loki-config.yaml
+    networks:
+      - internal
+
+  prometheus:
+    image: prom/prometheus:v2.41.0
+    volumes:
+      - ./volumes/prometheus:/etc/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    ports:
+      - 9090:9090
+    networks:
+      - internal
+
+  promtail:
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    image: grafana/promtail:2.9.3
+    restart: always
+    volumes:
+      - ./volumes/promtail:/etc/promtail
+    command:
+      - "--config.file=/etc/promtail/config.yaml"
+    networks:
+      - internal
+
+  init_tempo:
+    image: &tempoImage grafana/tempo:latest
+    user: root
+    entrypoint:
+      - "chown"
+      - "10001:10001"
+      - "/var/tempo"
+    volumes:
+      - ./volumes/tempo:/var/tempo
+    networks:
+      - internal
+
+  tempo:
+    image: *tempoImage
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./volumes/tempo/tempo.yaml:/etc/tempo.yaml
+    ports:
+      - "14268:14268" # jaeger ingest
+      - "3200:3200" # tempo
+      - "9095:9095" # tempo grpc
+      - "4317:4317" # otlp grpc
+      - "4318:4318" # otlp http
+      - "9411:9411" # zipkin
+    depends_on:
+      - init_tempo
+    networks:
+      - internal
+  
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  auth_postgres_data:
+  user_postgres_data:
+  product_postgres_data:
+  payment_postgres_data:
+  order_postgres_data:
+  grafana_dashboards:
+  prometheus_data:
+  loki_config:

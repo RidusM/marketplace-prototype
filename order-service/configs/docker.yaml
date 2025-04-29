@@ -1,0 +1,30 @@
+env: "dev"
+
+grpc_port: 50051
+
+kafka:
+  brokers:
+    - kafka1:39092
+    - kafka2:39093
+    - kafka3:39094
+
+postgres:
+  connection: "postgres"
+  user: "postgres"
+  password: "postgres"
+  host: "db"
+  port: "5432"
+  name: "product"
+  maxPool: 5
+  timeout: 1s
+  connAttempts: 10
+
+otlp:
+  endpoint: tempo:4317
+
+redis:
+  password: "password"
+  addr: "redis:6379"
+  poolSize: 2
+  minIdleCons: 4
+  connTimeout: 1s

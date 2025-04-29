@@ -1,0 +1,29 @@
+app:
+  name: "marketplace"
+  version: "1.0.0"
+
+kafka:
+  brokers:
+    - kafka1:9092"
+    - "kafka-prod-broker2:9092"
+
+otlp:
+  endpoint: "https://otlp-prod.example.com"
+
+product_service:
+  host: auth-service:8080
+  metrics_port: "9001"
+
+user_service:
+  host: "user-service-prod.example.com"
+  metrics_port: "9002"
+
+payment_service:
+  host: "payment-service-prod.example.com"
+  metrics_port: "9003"
+
+auth_service:
+  host: "auth-service-prod.example.com"
+  metrics_port: "9004"
+
+env: "prod"

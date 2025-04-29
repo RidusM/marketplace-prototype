@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/google/api/annotations.proto";
+
+option go_package = "pkg/api/client";
+
+package api;
+
+service UserService {
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse) {
+    option (google.api.http) = {
+      get: "/profiles/{profileID}"
+    };
+  }
+
+  rpc DeleteProfile(DeleteProfileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/profiles/{profileID}"
+    };
+  }
+
+  rpc UpdateProfile(UpdateProfileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/profiles/{profileID}"
+      body: "*"
+    };
+  }
+
+  rpc CreateProfile(CreateProfileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/profiles"
+      body: "*"
+    };
+  }
+}
+
+message CreateProfileRequest {
+  string userID = 1;
+  string username = 2;
+  string firstname = 3;
+  string middlename = 4;
+  string lastname = 5;
+  string phoneNumber = 6;
+  string email = 7;
+}
+
+message UpdateProfileRequest {
+  string profileID = 1;
+  string username = 2;
+  string firstname = 3;
+  string middlename = 4;
+  string lastname = 5;
+  string phoneNumber = 6;
+  string email = 7;
+}
+
+message DeleteProfileRequest {
+  string profileID = 1;
+}
+
+message GetProfileRequest {
+  string profileID = 1;
+}
+
+message GetProfileResponse {
+  Profile user = 1;
+}
+
+message Profile {
+  string userID = 1;
+  string profileID = 2;
+  string username = 3;
+  string firstname = 4;
+  string middlename = 5;
+  string lastname = 6;
+  string phoneNumber = 7;
+  string email = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}

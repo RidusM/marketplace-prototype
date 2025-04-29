@@ -1,0 +1,19 @@
+grpc_port: 50051
+
+postgres:
+  connection: "postgres"
+  user: "postgres"
+  password: "postgres"
+  host: "db"
+  port: "5432"
+  name: "payment"
+
+redis:
+  password:
+  addr: "redis:6379"  
+
+kafka:
+  brokers:
+    - kafka1:39092
+    - kafka2:39093
+    - kafka3:39094
